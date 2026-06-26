@@ -1,0 +1,248 @@
+---
+title: "Praktikum 5 Anreg"
+author: "Aliffah Fathara"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown
+---
+
+# Library
+
+```{r}
+library(readxl) # untuk membaca data
+library(GGally) # untuk menghasilkan matriks hubungan antarpeubah
+library(corrplot) # untuk menghasilkan matriks korelasi
+library(dplyr) # untuk manipulasi data
+library(car) # untuk memeriksa multikolinearitas
+library(readr)
+```
+
+# Data
+
+```{r}
+data <- read_xlsx("D:\\Documents\\Data NTT 15.xlsx")
+head(data) # menampilkan sekian data awal
+str(data) # menampilkan tipe data setiap peubah
+summary(data) # menampilkan ringkasan data
+```
+
+Data yang digunakan adalah data dari 15 Kabupaten/Kota di Nusa Tenggara Timur pada Tahun 2022 dengan 1 peubah respon yaitu Persentase Penduduk Miskin (PPM) dan 8 peubah penjelas yang terdiri dari 7 peubah kuantitatif dan 1 peubah kualitatif. Peubah tersebut adalah Indeks Pembangunan Manusia (IPM), rata-rata lama sekolah (RLS), persentase penduduk buta huruf (PBH), persentase akses sanitasi layak (ASL), persentase tingkat pengangguran terbuka (TPT), Produk Domestik Regional Bruto (PDRB), persentase penduduk yang menggunakan kayu bakar (PKB), dan kategori umur harapan hidup (UHH).
+
+Untuk mempermudah dalam komputasi, karena peubah wilayah tidak digunakan, maka dapat dihapus. Pada praktikum kali ini akan dilakukan dua pemodelan, yakni model dengan seluruh peubah kuantitatif dan model dengan adanya peubah kualitatif, supaya lebih mudah dalam analisisnya maka akan dibentuk dua data berbeda.
+
+```{r}
+data <- select(data, -Wilayah)
+dt <- select(data, -UHH)
+```
+
+# Eksplorasi data
+
+```{r}
+hist(dt$PPM, main = "Sebaran Persentase Penduduk Miskin")
+```
+
+```{r}
+boxplot(dt$PPM, main = "Sebaran Persentase Penduduk Miskin")
+```
+
+```{r}
+ggpairs(dt,
+        upper = list(continuous = wrap('cor', size = 3)),
+        title = "Matriks Scatterplot Data")
+
+```
+
+```{r}
+cor_matrix <- cor(dt, use = "complete.obs")
+
+corrplot(cor_matrix, method = "color", type = "lower",
+         col = colorRampPalette(c("red", "white", "blue"))(200),
+         addCoef.col = "black", tl.col = "black", tl.srt = 35)
+```
+
+# Pemodelan
+
+## Tanpa Fungsi
+
+Perhitungan nilai $\hat{\beta}$ secara matriks dapat dilakukan dengan rumus berikut.
+
+$$\hat{\beta} = (X'X)^{-1} X'y$$
+
+```{r}
+# pembentukan matriks
+n <- nrow(dt)
+x0 <- rep(1,n)
+x <- data.frame(x0, dt$IPM, dt$RLS, dt$PBH, dt$ASL,
+                dt$TPT, dt$PDRB, dt$PKB)
+x <- as.matrix(x)
+y <- dt$PPM
+```
+
+```{r}
+beta_duga <- solve(t(x)%*%x)%*%t(x)%*%y
+beta_duga
+```
+
+Hasil tersebut menjelaskan bahwa persamaan yang terbentuk adalah
+$$\hat{PPM}=30.4987−0.8770IPM+3.2360RLS+1.4379PBH+0.0066ASL−4.2048TPT+0.0010PDRB+0.2074PKB$$
+Selang kepercayaan dan pengujian signifikansi setiap parameter dapat dilakukan dengan menghitung keragaman tiap dugaan parameter. Secara umum, nilai ragam dugaan parameter $\hat{\beta}_j$ dapat dihitung melalui rumus berikut.
+
+$$Var(\hat{\beta}_j) = \hat{\sigma}^2 C_{jj}$$
+Dengan matriks $C$ adalah matriks $(X'X)^{-1}$ 
+
+```{r}
+c <- data.frame(solve(t(x)%*%x))
+```
+
+Unsur diagonal dari matriks $C$ dapat digunakan untuk menghitung nilai galat baku dari setiap dugaan parameter. Galat baku ini dapat digunakan untuk menghitung selang kepercayaan dari dugaan yang dihasilkan.
+
+$$SE(\hat{\beta}_j) = \sqrt{Var(\hat{\beta}_j)} = \sqrt{\sigma^2 C_{jj}} = \hat{\sigma}\sqrt{c_{ii}}$$
+
+Misal ingin dihitung selang kepercayaan dari dugaan parameter $\beta_2$, maka
+
+```{r}
+y_hat <- x %*% beta_duga
+residuals <- y - y_hat
+n <- nrow(x)
+p <- ncol(x)
+KTG <- sum(residuals^2) / (n - p) 
+
+c22 <- c[2,2]
+
+(se.b2 <- sqrt(KTG*c22))
+```
+
+```{r}
+alfa <- 0.05
+
+#Batas Bawah beta2
+(bb.b2 <- beta_duga[3,1] - abs(qt(alfa/2, df=n-p))*se.b2)
+```
+
+```{r}
+#Batas Atas beta2
+(ba.b2 <- beta_duga[3,1] + abs(qt(alfa/2, df=n-p))*se.b2)
+```
+
+Dengan demikian, kita dapat ketahui selang kepercayaan untuk $\hat{\beta}_2$ sebagai berikut.
+$$0.9811<\hat{\beta}_2<5.4908$$
+
+Pada kasus selang kepercayaan $\hat{\beta}_2$ di atas, didapati bahwa dugaan parameter berada dalam rentang yang mengandung nilai 0. Dengan demikian, dapat dimaknai bahwa diduga nilai parameter $\hat{\beta}_2$ bernilai 0 atau tidak signifikan dalam taraf nyata 5%.
+
+
+# Dengan Fungsi
+
+```{r}
+model1 <- lm(formula = PPM ~ ., data = dt)
+summary(model1)
+```
+
+Dugaan parameter model secara matriks dan fungsi menghasilkan angka yang sama, sehingga perhitungan matriks memang sudah tepat. Pada ringkasan model ini dapat dilihat bahwa tidak ada parameter yang signifikan pada taraf nyata 5%, namun secara simultan model ini signifikan dengan nilai p yang lebih kecil dari alpha yaitu 0.1811. Hal ini mengindikasi model yang buruk, kemungkinan terjadi pelanggaran asumsi sisaan maupun multikolinearitas, yang ditunjukkan pula dengan perubahan tanda korelasi pada peubah RLS.
+
+# Pemeriksaan Multikoliniearitas
+
+```{r}
+vif(model1)
+```
+
+
+# Pemodelan Kedua
+
+```{r}
+model2 <- lm(PPM ~ IPM + PBH + ASL + TPT + PKB, data = dt)
+summary(model2)
+```
+
+Persamaan yang terbentuk adalah
+$$\hat{PPM}=17.3685−0.1471IPM+0.6413PBH−0.0146ASL−2.9178TPT+0.2798PKB$$
+```{r}
+vif(model2)
+```
+
+Model hasil reduksi peubah menunjukkan bahwa nilai VIF < 10 sehingga dinyatakan tidak terjadi multikolinearitas. Namun seluruh parameter masih tidak signifikan, padahal secara simultan model ini sudah signifikan. Artinya ada permasalahan lain yang mungkin belum tertangani, perlu dilakuan uji asumsi dan pemeriksaan pencilan, leverage, dan amatan berpengaruh
+
+# Pemodelan Dummy
+
+Untuk melakukan pemodelan regresi dengan peubah dummy, peubah kualitatif harus diubah menjadi tipe faktor agar bisa dilakukan regresi. Nilai yang menjadi referensi pemodelan jika langsung menggunakan `as.factor()` adalah nilai dengan urutan abjad pertama, pada data ini adalah “Agak Rentan”
+
+```{r}
+data$UHH <- as.factor(data$UHH)
+str(data)
+```
+
+```{r}
+model3 <- lm(PPM ~ ., data = data)
+summary(model3)
+```
+
+
+# Uji Hipotesis Kesamaan Parameter Regresi
+
+Misal ingin dilakukan pemodelan dengan peubah respon Persentase Penduduk Miskin dengan 4 peubah penjelas, yaitu IPM, RLS, TBH, TPT
+
+```{r}
+model4 <- lm(PPM ~ IPM + RLS + PBH + TPT, data = dt)
+summary(model4)
+```
+
+```{r}
+vif(model4)
+```
+
+Regresi yang dihasilkan tidak mengalami masalah multikolinearitas. Hasil tersebut menunjukkan bahwa peubah PBH dan RLS signifikan pada taraf nyata 5%, sedangkan IPM dan TPT tidak berkorelasi. Berikut adalah persamaan yang terbentuk
+
+$$\hat{PPM}=14.9439−0.5451IPM+5.5803RLS+1.8838PBH−3.4882TPT$$
+
+Hasil pemodelan tersebut dapat dilakukan serangkaian uji untuk memeriksa apakah $β_3$dan $β_4$ dapat diasumsikan sama ketika parameter lainnya tidak signifikan atau diasumsikan sama dengan nol.
+
+Hipotesis yang diuji adalah
+
+$$H_0: β3=β4$$
+$$H_1: β3≠β4$$
+
+Karena peubah IPM dan TPT tidak signifikan maka dapat diasumsikan nol sehingga model dapat disederhanakan menjadi:
+
+$$PPM=β_0+β_3PBH+β_4RLS+ε$$
+Jika $H_0$ benar $(β_3=β_4=β_1')$, model bisa ditulis ulang sebagai
+
+$$PPM=β_0+β_1' (PBH+RLS)+ε$$
+
+```{r}
+# Buat peubah baru
+dt$X_new <- dt$PBH + dt$RLS
+
+# Model penuh (Full Model)
+model_full <- lm(PPM ~ PBH + RLS, data = dt)
+
+# Model terbatas (Restricted Model)
+model_restricted <- lm(PPM ~ X_new, data = dt)
+
+# Bandingkan dengan Uji F
+anova(model_restricted, model_full)
+```
+
+Hasil perbandingan menunjukkan bahwa nilai p kurang dari alpha sehingga dapat disimpulkan bahwa tolak H0, artinya peubah PBH dan RLS berbeda secara signifikan sehingga tidak dapat digabung. Selanjutnya daoat dipilih apakah akan menggunakan peubah dengan 4 peubah atau hanya 2 peubah berdasarkan indikator Adjusted R-Squared, AIC, dan BIC.
+
+```{r}
+model_all <- lm(PPM ~ IPM + RLS + PBH + TPT, data = dt)
+summary(model_all)
+```
+
+```{r}
+model_signif <- lm(PPM ~ PBH + RLS, data = dt)
+summary(model_signif)
+```
+
+```{r}
+perbandingan <- data.frame(
+  Model = c("Peubah Penuh", "Peubah Signifikan"),
+  Adjusted_R2 = as.numeric(c(summary(model_all)$adj.r.squared, summary(model_signif)$adj.r.squared)),
+  AIC = as.numeric(c(AIC(model_all), AIC(model_signif))),
+  BIC = as.numeric(c(BIC(model_all), BIC(model_signif)))
+)
+perbandingan
+```
+
+Berdasarkan indikator Adjusted R square, AIC, dan BIC maka model dengan hanya dua peubah dipilih sebagai model yang terbaik. Persamaan yang terbentuk adalah sebagai berikut
+
+$$\hat{PPM}=-21.532+1.646PBH+4.424RLS$$
